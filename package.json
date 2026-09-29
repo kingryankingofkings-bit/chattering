@@ -13,7 +13,8 @@
     "db:seed": "prisma db seed",
     "db:reset": "prisma migrate reset --force",
     "rotate-keys": "tsx scripts/rotate-keys.ts",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "setup": "node scripts/setup.mjs"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",

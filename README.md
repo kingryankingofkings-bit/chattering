@@ -6,16 +6,17 @@ Four bottom tabs — **Explore · Random Encounter · Create · Blackbook** — 
 
 ## Quick start
 
+Everything below runs **inside the cloned project folder**. Commands are the same in PowerShell, cmd and bash.
+
 ```bash
-cp .env.example .env
-# generate an encryption key and a session secret:
-node -e "console.log('v1:'+require('crypto').randomBytes(32).toString('base64'))"   # → APP_ENCRYPTION_KEYS
-node -e "console.log(require('crypto').randomBytes(48).toString('base64'))"         # → SESSION_SECRET
+git clone https://github.com/kingryankingofkings-bit/chattering.git
+cd chattering
 npm install
-npx prisma migrate deploy      # creates ./data/chattering.db
-npm run db:seed                # demo creators, 12 public characters, scenarios, sample content
-npm run dev                    # http://localhost:3000
+npm run setup     # writes .env with fresh keys, creates ./data/chattering.db, seeds demo content
+npm run dev       # http://localhost:3000
 ```
+
+`npm run setup` is safe to re-run. If you prefer to do it by hand: copy `.env.example` to `.env`, fill `APP_ENCRYPTION_KEYS` (`v1:` + 32 random bytes base64) and `SESSION_SECRET`, then `npx prisma migrate deploy` and `npm run db:seed`.
 
 Sign up (the first account becomes ADMIN and can open `/moderation`). Seeded creators use the password `demo-password-1234` (e.g. `nocturne@chattering.example`).
 
