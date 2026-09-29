@@ -9,7 +9,7 @@ import { buildCharacterSystemPrompt } from "./ai/prompts";
 import { cardInclude, canView, getSheet, publicCharacterWhere, toCard, toPromptCharacter, viewerMarks, type CharacterCard, type CharacterWithOwner } from "./characters";
 import { GENDER_PRESENTATIONS, TAGS, THEMES } from "./constants";
 import { prefsWhere } from "./explore";
-import { checkText } from "./safety";
+import { checkLimitText } from "./safety";
 import type { ChatContext, EncounterData, UserPrefs } from "./types";
 import { hash32, mulberry32 } from "./utils";
 
@@ -57,7 +57,7 @@ export async function rollEncounter(opts: { userId: string; prefs: UserPrefs; in
   const surprise = !!p.surprise;
 
   const hardLimits = p.hardLimits ?? "";
-  const safe = checkText(hardLimits);
+  const safe = checkLimitText(hardLimits);
   if (!safe.ok) throw new ApiError(422, safe.reason, { category: safe.category });
 
   const requestedIntensity = Math.min(p.intensity ?? prefs.maxIntensity, prefs.maxIntensity);

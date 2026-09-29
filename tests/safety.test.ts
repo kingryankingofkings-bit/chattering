@@ -41,3 +41,15 @@ describe("safety filter", () => {
     expect(r.field).toBe("backstory");
   });
 });
+
+describe("limit fields", () => {
+  it("lets users name prohibited things as limits", async () => {
+    const { checkLimitText } = await import("@/lib/safety");
+    expect(checkLimitText("no non-con, no incest, nothing with animals").ok).toBe(true);
+    expect(checkFields({ hardLimits: "no rape scenes", boundaries: "never bestiality" }).ok).toBe(true);
+  });
+  it("still blocks minors and real people in limit fields", () => {
+    expect(checkFields({ hardLimits: "only 16 year olds" }).ok).toBe(false);
+    expect(checkFields({ limits: "deepfake of my ex" }).ok).toBe(false);
+  });
+});

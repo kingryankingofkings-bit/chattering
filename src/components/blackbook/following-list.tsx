@@ -31,7 +31,7 @@ export function FollowingList() {
     <ul className="space-y-2">
       {data.items.map((c) => (
         <li key={c.id} className="card fade-up flex items-center gap-3 p-3">
-          <Link href={`/explore?creator=${c.id}`} className="flex min-w-0 flex-1 items-center gap-3 focus-ring rounded-xl">
+          <Link href={`/creator/${c.id}`} className="flex min-w-0 flex-1 items-center gap-3 focus-ring rounded-xl">
             <Avatar name={c.displayName} seed={c.id} src={c.avatarUrl ?? null} size={44} rounded="rounded-full" />
             <span className="min-w-0">
               <span className="block truncate text-sm text-fg">{c.displayName}</span>

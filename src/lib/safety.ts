@@ -31,7 +31,7 @@ const RULES: Rule[] = [
   // Minors / minor-coded
   { category: "minors", pattern: /\b(loli|lolita|shota|shotacon|lolicon|cp)\b/i },
   { category: "minors", pattern: /\b(child|children|kid|kids|toddler|preteen|pre-teen|underage|minor|minors|schoolgirl|schoolboy|little girl|little boy)\b/i },
-  { category: "minors", pattern: /\b(1[0-7]|[1-9])[ -]?(years?[ -]old|yo|y\/o)\b/i },
+  { category: "minors", pattern: /\b(1[0-7]|[1-9])[ -]?(years?[ -]olds?|yo|y\/o)\b/i },
   { category: "minors", pattern: /\bage(d)?\s*(:|is|of)?\s*(1[0-7]|[1-9])\b/i },
   { category: "minors", pattern: /\b(teen|teens|teenager|teenage|high[- ]school(er)?|middle[- ]school|jailbait)\b/i },
   // Real people / deepfakes
@@ -59,9 +59,35 @@ export function checkText(text: string | null | undefined): SafetyResult {
   return { ok: true };
 }
 
-/** Check many fields at once; returns the first failure with the field name. */
+/**
+ * Fields that describe what to EXCLUDE (hard limits, boundaries, prohibited
+ * topics). They only ever feed the "never include" part of a prompt, so users
+ * must be able to name prohibited things there. They still get the minors and
+ * real-person screens because those can't be phrased as a legitimate limit that
+ * needs the term itself.
+ */
+export const LIMIT_FIELDS = new Set(["hardLimits", "boundaries", "prohibitedTopics", "limits", "excludeTags", "excludeThemes", "excludedThemes"]);
+const LIMIT_CATEGORIES: SafetyCategory[] = ["minors", "real_person"];
+
+export function checkLimitText(text: string | null | undefined): SafetyResult {
+  if (!text) return { ok: true };
+  const normalized = text.replace(/\s+/g, " ");
+  for (const rule of RULES) {
+    if (!LIMIT_CATEGORIES.includes(rule.category)) continue;
+    if (rule.pattern.test(normalized)) return { ok: false, category: rule.category, reason: CATEGORY_MESSAGES[rule.category] };
+  }
+  return { ok: true };
+}
+
+/** Check many fields at once; returns the first failure with the field name. Limit-type fields use the relaxed screen. */
 export function checkFields(fields: Record<string, string | string[] | null | undefined>): SafetyResult & { field?: string } {
   for (const [field, value] of Object.entries(fields)) {
+    if (LIMIT_FIELDS.has(field)) {
+      const joined = Array.isArray(value) ? value.join(" ") : value;
+      const r = checkLimitText(joined);
+      if (!r.ok) return { ...r, field };
+      continue;
+    }
     const joined = Array.isArray(value) ? value.join(" ") : value;
     const r = checkText(joined);
     if (!r.ok) return { ...r, field };

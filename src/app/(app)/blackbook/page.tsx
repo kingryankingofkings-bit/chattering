@@ -1,7 +1,7 @@
 import Link from "next/link";
-import { BookHeart, Bell, ChevronRight, CreditCard, Dices, EyeOff, FolderHeart, Heart, History, Images, KeyRound, Layers, PenSquare, ShieldOff, BookOpen, UserRound, Users, UsersRound } from "lucide-react";
+import { BookHeart, Bell, ChevronRight, CreditCard, Dices, EyeOff, FolderHeart, Gavel, Heart, History, Images, KeyRound, Layers, PenSquare, ShieldCheck, ShieldOff, BookOpen, UserRound, Users, UsersRound } from "lucide-react";
 import { Avatar } from "@/components/ui";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentUser, isModerator } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { cardInclude, canView, toCard, viewerMarks } from "@/lib/characters";
 import { toMe } from "@/lib/blackbook";
@@ -68,6 +68,8 @@ export default async function BlackbookPage() {
         { href: "/blackbook/notifications", label: "Notifications", icon: Bell },
         { href: "/blackbook/subscription", label: "Subscription", icon: CreditCard },
         { href: "/blackbook/account", label: "Account & data", icon: KeyRound },
+        { href: "/appeals", label: "Moderation & appeals", icon: Gavel },
+        ...(isModerator(user) ? [{ href: "/moderation", label: "Moderation queue", icon: ShieldCheck }] : []),
       ],
     },
   ];
