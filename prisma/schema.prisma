@@ -1,0 +1,533 @@
+// Chattering — data model
+// SQLite for the first version. Every long-form or private field is stored
+// encrypted (AES-256-GCM, see src/lib/crypto.ts) in columns suffixed `Enc`.
+// JSON blobs carry a `dataVersion` so records written by older app/model
+// versions can be migrated forward lazily (see src/lib/migrate-data.ts).
+// String "enum" columns are used (SQLite friendly); allowed values live in
+// src/lib/constants.ts.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                String    @id @default(cuid())
+  email             String    @unique
+  passwordHash      String
+  displayName       String
+  avatarMediaId     String?
+  bioEnc            String?
+  prefsEnc          String?   // encrypted JSON UserPrefs
+  notificationPrefs String    @default("{}")
+  role              String    @default("USER") // USER | MODERATOR | ADMIN
+  subscriptionTier  String    @default("FREE") // FREE | PLUS
+  subscriptionRenewsAt DateTime?
+  ageVerifiedAt     DateTime?
+  acceptedTermsAt   DateTime?
+  dataVersion       Int       @default(1)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  deletedAt         DateTime?
+
+  sessions          Session[]
+  personas          Persona[]
+  characters        Character[]       @relation("OwnedCharacters")
+  chats             Chat[]
+  favorites         Favorite[]
+  ratings           Rating[]
+  pinned            PinnedCharacter[]
+  following         Follow[]          @relation("Follower")
+  followers         Follow[]          @relation("Creator")
+  blocks            Block[]           @relation("Blocker")
+  blockedBy         Block[]           @relation("Blocked")
+  hiddenTags        HiddenTag[]
+  reports           Report[]          @relation("Reporter")
+  savedEncounters   SavedEncounter[]
+  comics            Comic[]
+  stories           Story[]
+  images            GeneratedImage[]
+  media             Media[]
+  reactions         Reaction[]
+  contentFavorites  ContentFavorite[]
+  collections       Collection[]
+  bookmarks         Bookmark[]
+  generations       Generation[]
+  appeals           Appeal[]
+  moderationActions ModerationAction[] @relation("Moderator")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique
+  userAgent String?
+  ipHash    String?
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Persona {
+  id        String   @id @default(cuid())
+  userId    String
+  name      String
+  dataEnc   String   // encrypted JSON PersonaData
+  isDefault Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chats     Chat[]
+
+  @@index([userId])
+}
+
+model Character {
+  id                 String   @id @default(cuid())
+  ownerId            String
+  name               String
+  tagline            String
+  description        String
+  pronouns           String   @default("they/them")
+  identity           String   @default("")
+  appearance         String   @default("")
+  avatarMediaId      String?
+  avatarSeed         String   @default("")
+  statedAge          Int
+  ageConfirmed       Boolean  @default(false)
+  fictionConfirmed   Boolean  @default(false)
+  sheetEnc           String   // encrypted JSON CharacterSheet (personality, backstory, scenario, lore, memories...)
+  tags               String   @default("[]") // JSON string[]
+  themes             String   @default("[]") // JSON string[]
+  genderPresentation String   @default("")
+  orientation        String   @default("")
+  personalityType    String   @default("")
+  roleType           String   @default("")
+  intensity          Int      @default(2) // 1 soft, 2 medium, 3 explicit
+  allowedDynamics    String   @default("[]")
+  prohibitedTopics   String   @default("[]")
+  responseStyle      String   @default("balanced")
+  messageLength      String   @default("medium")
+  visibility         String   @default("PRIVATE") // PUBLIC | UNLISTED | PRIVATE
+  status             String   @default("ACTIVE")  // ACTIVE | HIDDEN | REMOVED
+  chatCount          Int      @default(0)
+  messageCount       Int      @default(0)
+  favoriteCount      Int      @default(0)
+  ratingSum          Int      @default(0)
+  ratingCount        Int      @default(0)
+  viewCount          Int      @default(0)
+  dataVersion        Int      @default(1)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  owner        User              @relation("OwnedCharacters", fields: [ownerId], references: [id], onDelete: Cascade)
+  chats        Chat[]
+  favorites    Favorite[]
+  ratings      Rating[]
+  pinned       PinnedCharacter[]
+  encounters   SavedEncounter[]
+  comicLinks   ComicCharacter[]
+  storyLinks   StoryCharacter[]
+  images       GeneratedImage[]
+
+  @@index([ownerId])
+  @@index([visibility, status, createdAt])
+  @@index([visibility, status, chatCount])
+}
+
+model Chat {
+  id             String    @id @default(cuid())
+  userId         String
+  characterId    String
+  personaId      String?
+  title          String    @default("")
+  contextEnc     String?   // encrypted JSON ChatContext (encounter scenario, overrides)
+  summaryEnc     String?   // encrypted rolling memory summary
+  messageCount   Int       @default(0)
+  lastMessageAt  DateTime  @default(now())
+  archived       Boolean   @default(false)
+  isPreview      Boolean   @default(false)
+  dataVersion    Int       @default(1)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  character Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  persona   Persona?  @relation(fields: [personaId], references: [id], onDelete: SetNull)
+  messages  Message[]
+
+  @@index([userId, lastMessageAt])
+  @@index([characterId])
+}
+
+model Message {
+  id         String   @id @default(cuid())
+  chatId     String
+  role       String   // user | assistant | system
+  contentEnc String
+  provider   String?
+  model      String?
+  clientId   String?  // offline outbox id for idempotent replay
+  createdAt  DateTime @default(now())
+  chat       Chat     @relation(fields: [chatId], references: [id], onDelete: Cascade)
+
+  @@unique([chatId, clientId])
+  @@index([chatId, createdAt])
+}
+
+model Favorite {
+  userId      String
+  characterId String
+  createdAt   DateTime  @default(now())
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  character   Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+
+  @@id([userId, characterId])
+  @@index([characterId])
+}
+
+model Rating {
+  userId      String
+  characterId String
+  score       Int
+  createdAt   DateTime  @default(now())
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  character   Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+
+  @@id([userId, characterId])
+}
+
+model PinnedCharacter {
+  userId      String
+  characterId String
+  position    Int
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  character   Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+
+  @@id([userId, characterId])
+}
+
+model Follow {
+  followerId String
+  creatorId  String
+  createdAt  DateTime @default(now())
+  follower   User     @relation("Follower", fields: [followerId], references: [id], onDelete: Cascade)
+  creator    User     @relation("Creator", fields: [creatorId], references: [id], onDelete: Cascade)
+
+  @@id([followerId, creatorId])
+}
+
+model Block {
+  userId        String
+  blockedUserId String
+  createdAt     DateTime @default(now())
+  user          User     @relation("Blocker", fields: [userId], references: [id], onDelete: Cascade)
+  blocked       User     @relation("Blocked", fields: [blockedUserId], references: [id], onDelete: Cascade)
+
+  @@id([userId, blockedUserId])
+}
+
+model HiddenTag {
+  userId String
+  tag    String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, tag])
+}
+
+model Report {
+  id           String    @id @default(cuid())
+  reporterId   String
+  targetType   String    // CHARACTER | COMIC | STORY | IMAGE | USER | CHAT_MESSAGE
+  targetId     String
+  reason       String
+  detailsEnc   String?
+  status       String    @default("OPEN") // OPEN | REVIEWING | RESOLVED | DISMISSED
+  resolution   String?
+  resolvedById String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  reporter     User      @relation("Reporter", fields: [reporterId], references: [id], onDelete: Cascade)
+
+  @@index([status, createdAt])
+  @@index([targetType, targetId])
+}
+
+model ModerationAction {
+  id          String   @id @default(cuid())
+  moderatorId String
+  targetType  String
+  targetId    String
+  action      String   // HIDE | REMOVE | RESTORE | WARN | DISMISS
+  note        String?
+  createdAt   DateTime @default(now())
+  moderator   User     @relation("Moderator", fields: [moderatorId], references: [id], onDelete: Cascade)
+  appeals     Appeal[]
+
+  @@index([targetType, targetId])
+}
+
+model Appeal {
+  id         String   @id @default(cuid())
+  userId     String
+  actionId   String?
+  targetType String
+  targetId   String
+  messageEnc String
+  status     String   @default("OPEN") // OPEN | ACCEPTED | REJECTED
+  response   String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  action     ModerationAction? @relation(fields: [actionId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+}
+
+model ScenarioTemplate {
+  id        String   @id @default(cuid())
+  title     String
+  setting   String
+  hook      String
+  tags      String   @default("[]")
+  themes    String   @default("[]")
+  intensity Int      @default(2)
+  createdAt DateTime @default(now())
+}
+
+model SavedEncounter {
+  id          String    @id @default(cuid())
+  userId      String
+  characterId String
+  name        String
+  dataEnc     String    // encrypted JSON EncounterData
+  isTemplate  Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  character   Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Media {
+  id         String   @id @default(cuid())
+  ownerId    String
+  kind       String   @default("image")
+  mime       String
+  bytes      Int
+  width      Int?
+  height     Int?
+  storageKey String   @unique // encrypted blob on disk
+  visibility String   @default("PRIVATE") // PRIVATE | PUBLIC
+  createdAt  DateTime @default(now())
+  owner      User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@index([ownerId])
+}
+
+model Comic {
+  id            String   @id @default(cuid())
+  authorId      String
+  title         String
+  premise       String
+  artStyle      String   @default("noir-ink")
+  pageCount     Int      @default(1)
+  panelLayout   String   @default("grid-4")
+  tone          String   @default("sensual")
+  orientation   String   @default("portrait")
+  intensity     Int      @default(2)
+  tags          String   @default("[]")
+  pagesEnc      String   // encrypted JSON ComicPage[]
+  coverMediaId  String?
+  status        String   @default("DRAFT") // DRAFT | PUBLISHED
+  visibility    String   @default("PRIVATE")
+  modStatus     String   @default("ACTIVE") // ACTIVE | HIDDEN | REMOVED
+  sourceChatId  String?
+  provider      String?
+  model         String?
+  imageProvider String?
+  imageModel    String?
+  likeCount     Int      @default(0)
+  favoriteCount Int      @default(0)
+  viewCount     Int      @default(0)
+  dataVersion   Int      @default(1)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  publishedAt   DateTime?
+  author        User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  characters    ComicCharacter[]
+
+  @@index([authorId])
+  @@index([status, visibility, modStatus, publishedAt])
+}
+
+model ComicCharacter {
+  comicId     String
+  characterId String
+  comic       Comic     @relation(fields: [comicId], references: [id], onDelete: Cascade)
+  character   Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+
+  @@id([comicId, characterId])
+}
+
+model Story {
+  id            String   @id @default(cuid())
+  authorId      String
+  title         String
+  summary       String   @default("")
+  genre         String   @default("romance")
+  tone          String   @default("sensual")
+  pov           String   @default("second")
+  tense         String   @default("present")
+  length        String   @default("short")
+  intensity     Int      @default(2)
+  endingType    String   @default("open")
+  tags          String   @default("[]")
+  contentEnc    String   // encrypted JSON StoryChapter[]
+  wordCount     Int      @default(0)
+  status        String   @default("DRAFT")
+  visibility    String   @default("PRIVATE")
+  modStatus     String   @default("ACTIVE")
+  sourceChatId  String?
+  parentStoryId String?
+  provider      String?
+  model         String?
+  likeCount     Int      @default(0)
+  favoriteCount Int      @default(0)
+  viewCount     Int      @default(0)
+  dataVersion   Int      @default(1)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  publishedAt   DateTime?
+  author        User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  characters    StoryCharacter[]
+  bookmarks     Bookmark[]
+
+  @@index([authorId])
+  @@index([status, visibility, modStatus, publishedAt])
+}
+
+model StoryCharacter {
+  storyId     String
+  characterId String
+  story       Story     @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  character   Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+
+  @@id([storyId, characterId])
+}
+
+model Bookmark {
+  userId       String
+  storyId      String
+  chapterIndex Int      @default(0)
+  scrollRatio  Float    @default(0)
+  updatedAt    DateTime @updatedAt
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  story        Story    @relation(fields: [storyId], references: [id], onDelete: Cascade)
+
+  @@id([userId, storyId])
+}
+
+model GeneratedImage {
+  id             String   @id @default(cuid())
+  ownerId        String
+  mediaId        String
+  title          String   @default("")
+  promptEnc      String
+  negativeEnc    String?
+  style          String   @default("painterly")
+  seed           Int      @default(0)
+  orientation    String   @default("portrait")
+  intensity      Int      @default(2)
+  tags           String   @default("[]")
+  characterId    String?
+  provider       String?
+  model          String?
+  showDetails    Boolean  @default(true)
+  allowRemix     Boolean  @default(true)
+  parentImageId  String?
+  status         String   @default("DRAFT") // DRAFT | PUBLISHED
+  visibility     String   @default("PRIVATE")
+  modStatus      String   @default("ACTIVE")
+  likeCount      Int      @default(0)
+  saveCount      Int      @default(0)
+  viewCount      Int      @default(0)
+  dataVersion    Int      @default(1)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  publishedAt    DateTime?
+  owner          User       @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  character      Character? @relation(fields: [characterId], references: [id], onDelete: SetNull)
+
+  @@index([ownerId])
+  @@index([status, visibility, modStatus, publishedAt])
+}
+
+model Reaction {
+  userId     String
+  targetType String // COMIC | STORY | IMAGE
+  targetId   String
+  kind       String @default("like") // like | fire | heart | wow
+  createdAt  DateTime @default(now())
+  user       User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, targetType, targetId])
+  @@index([targetType, targetId])
+}
+
+model ContentFavorite {
+  userId     String
+  targetType String // COMIC | STORY | IMAGE
+  targetId   String
+  createdAt  DateTime @default(now())
+  user       User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, targetType, targetId])
+}
+
+model Collection {
+  id          String   @id @default(cuid())
+  userId      String
+  name        String
+  description String   @default("")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items       CollectionItem[]
+
+  @@index([userId])
+}
+
+model CollectionItem {
+  collectionId String
+  targetType   String // CHARACTER | COMIC | STORY | IMAGE | ENCOUNTER
+  targetId     String
+  position     Int    @default(0)
+  addedAt      DateTime @default(now())
+  collection   Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+
+  @@id([collectionId, targetType, targetId])
+}
+
+model Generation {
+  id               String   @id @default(cuid())
+  userId           String
+  kind             String   // CHAT | STORY | COMIC | IMAGE | PREVIEW
+  provider         String
+  model            String
+  promptTokens     Int      @default(0)
+  completionTokens Int      @default(0)
+  durationMs       Int      @default(0)
+  status           String   @default("OK") // OK | BLOCKED | ERROR
+  error            String?
+  createdAt        DateTime @default(now())
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
