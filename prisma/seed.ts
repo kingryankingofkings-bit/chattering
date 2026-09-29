@@ -145,7 +145,7 @@ async function main() {
       const img = await images.generate({ prompt, style, orientation: i % 3 === 0 ? "portrait" : i % 3 === 1 ? "square" : "landscape", seed: hash32(prompt) });
       const media = await storeMedia({ ownerId: owner.id, data: img.data, mime: img.mime, width: img.width, height: img.height, visibility: "PUBLIC" });
       await prisma.generatedImage.create({ data: {
-        ownerId: owner.id, mediaId: media.id, title: prompt.split(",")[0], promptEnc: encryptString(prompt), style, seed: img.seed, orientation: img.width > img.height ? "landscape" : img.width === img.height ? "square" : "portrait",
+        ownerId: owner.id, mediaId: media.id, title: prompt.split(",")[0], promptEnc: encryptString(prompt), style, seed: img.seed % 2147483647, orientation: img.width > img.height ? "landscape" : img.width === img.height ? "square" : "portrait",
         intensity: 2, tags: JSON.stringify([style, "portrait"]), characterId, provider: img.provider, model: img.model, status: "PUBLISHED", visibility: "PUBLIC", publishedAt: new Date(), likeCount: 20 + i * 7, saveCount: 5 + i * 2, viewCount: 200 + i * 40,
       } });
     }
